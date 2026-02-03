@@ -3,49 +3,83 @@ using System.Collections.Generic;
 
 public class RagdollController : MonoBehaviour
 {
-    // ·¢µ¹¿ë ¸®Áöµå¹Ùµğµé
     private Rigidbody[] ragdollRigidbodies;
     private Animator anim;
-    private CharacterController cc; // È¤Àº CapsuleCollider
+    private CharacterController cc;
+    
+    private Vector3[] originalPositions;
+    private Quaternion[] originalRotations;
 
     void Awake()
+    {
+        Init();
+    }
+
+    public void Init()
     {
         anim = GetComponentInChildren<Animator>();
         cc = GetComponent<CharacterController>();
 
-        // ÀÚ½Äµé¿¡ ÀÖ´Â ¸ğµç ¸®Áöµå¹Ùµğ Ã£¾Æ¿À±â (·¢µ¹ »Àµé)
         ragdollRigidbodies = GetComponentsInChildren<Rigidbody>();
+        
+        originalPositions = new Vector3[ragdollRigidbodies.Length];
+        originalRotations = new Quaternion[ragdollRigidbodies.Length];
+        for (int i = 0; i < ragdollRigidbodies.Length; i++)
+        {
+            originalPositions[i] = ragdollRigidbodies[i].transform.localPosition;
+            originalRotations[i] = ragdollRigidbodies[i].transform.localRotation;
+        }
 
-        // ½ÃÀÛÇÒ ¶© ·¢µ¹ ²¨µÎ±â
         DisableRagdoll();
     }
 
-    // Æò¼Ò »óÅÂ (¾Ö´Ï¸ŞÀÌ¼ÇÀ¸·Î ¿òÁ÷ÀÓ)
     public void DisableRagdoll()
     {
         foreach (var rb in ragdollRigidbodies)
         {
-            rb.isKinematic = true; // ¹°¸® ²ô±â (¾Ö´Ï¸ŞÀÌ¼Ç¿¡ µû¸§)
-            rb.detectCollisions = false; // Ãæµ¹µµ ²ô±â (ÃÖÀûÈ­)
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+            rb.detectCollisions = false;
+        }
+        
+        for (int i = 0; i < ragdollRigidbodies.Length; i++)
+        {
+            ragdollRigidbodies[i].transform.localPosition = originalPositions[i];
+            ragdollRigidbodies[i].transform.localRotation = originalRotations[i];
         }
 
         if (anim != null) anim.enabled = true;
         if (cc != null) cc.enabled = true;
     }
 
-    // Á×¾úÀ» ¶§ (¹°¸® ¿£Áø ÄÑ±â)
+    // CS:GO 2 ìŠ¤íƒ€ì¼ ë˜ê·¸ëŒ
     public void EnableRagdoll()
     {
-        if (anim != null) anim.enabled = false; // ¾Ö´Ï¸ŞÀÌÅÍ ²ô±â (ÇÊ¼ö)
-        if (cc != null) cc.enabled = false;     // Ä¸½¶ Äİ¶óÀÌ´õ ²ô±â (ÇÊ¼ö)
+        if (anim != null) anim.enabled = false;
+        if (cc != null) cc.enabled = false;
 
         foreach (var rb in ragdollRigidbodies)
         {
-            rb.isKinematic = false; // ¹°¸® ÄÑ±â (Áß·Â ¹ŞÀ½)
-            rb.detectCollisions = true; // ¹Ù´ÚÀÌ¶û ºÎµúÇô¾ß ÇÔ
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            
+            // ì•„ì£¼ ì•½í•˜ê²Œ: ë†’ì€ ëŒí•‘ = ì²œì²œíˆ ë¶€ë“œëŸ½ê²Œ ì“°ëŸ¬ì§
+            rb.linearDamping = 3.5f;
+            rb.angularDamping =20f;
+            
+            rb.isKinematic = false;
+            rb.detectCollisions = true;
+        }
+    }
 
-            // ¾à°£ÀÇ ÈûÀ» Áà¼­ ÇÈ ¾²·¯Áö´Â ´À³¦ °­È­ (¼±ÅÃ)
-            // rb.AddForce(Vector3.up * 2f, ForceMode.Impulse); 
+    // í”¼ê²© ë°©í–¥ìœ¼ë¡œ í˜ ì ìš© (CS:GO 2ì²˜ëŸ¼ ë°€ë ¤ë‚˜ëŠ” íš¨ê³¼)
+    public void ApplyForce(Vector3 direction, float force = 300f)
+    {
+        if (ragdollRigidbodies.Length > 0)
+        {
+            // Hips(ê³¨ë°˜)ì— í˜ì„ ì£¼ë©´ ì „ì²´ê°€ ìì—°ìŠ¤ëŸ½ê²Œ ë°€ë ¤ë‚¨
+            ragdollRigidbodies[0].AddForce(direction.normalized * force, ForceMode.Impulse);
         }
     }
 }

@@ -1,4 +1,4 @@
-using Unity.Netcode;
+﻿using Unity.Netcode;
 using UnityEngine;
 
 public class PlayerController : NetworkBehaviour
@@ -32,10 +32,17 @@ public class PlayerController : NetworkBehaviour
     
     [Header("Network Animation")]
     public Unity.Netcode.Components.NetworkAnimator networkAnimator;
+    private AudioListener listener;
+
+    private RagdollController ragdoll;
+    private WeaponController weaponController;
 
     private void Awake()
     {
-        if (controller == null) controller = GetComponent<CharacterController>();
+        controller = GetComponent<CharacterController>();
+        weaponController = GetComponent<WeaponController>();
+        listener = GetComponentInChildren<AudioListener>();
+        ragdoll = GetComponent<RagdollController>();
         if (networkAnimator == null) networkAnimator = GetComponent<Unity.Netcode.Components.NetworkAnimator>();
         
         // 시작 시 기본 모델 설정 (Red 모델을 기본으로, 나중에 팀 배정되면 변경됨)
@@ -90,19 +97,40 @@ public class PlayerController : NetworkBehaviour
             if (UIManager.Instance != null)
                 UIManager.Instance.UpdateHP(hp.Value, teamId.Value);
 
-            // HP 변경 감지
-            hp.OnValueChanged += (oldVal, newVal) =>
-            {
-                if (UIManager.Instance != null)
-                    UIManager.Instance.UpdateHP(newVal, teamId.Value);
-            };
+            // HP  
+            hp.OnValueChanged += OnHpChanged;
         }
         else
         {
             // 남의 캐릭터면 카메라랑 리스너 끄기
             if (myCam != null) myCam.enabled = false;
-            var listener = GetComponentInChildren<AudioListener>(); // 자식에 있을 수도 있음
-            if (listener != null) listener.enabled = false;
+            // listener already assigned in Awake, just disable
+            if (listener != null) listener.enabled = false; 
+            
+            // Non-owner also needs to listen to HP for ragdoll
+            hp.OnValueChanged += OnHpChanged;
+        }
+    }
+
+    private void OnHpChanged(int oldVal, int newVal)
+    {
+        if (IsOwner && UIManager.Instance != null)
+            UIManager.Instance.UpdateHP(newVal, teamId.Value);
+
+        if (ragdoll != null)
+        {
+            if (newVal <= 0)
+            {
+                ragdoll.EnableRagdoll();
+                // 아주 약하게 밀려나는 효과
+                ragdoll.ApplyForce(-transform.forward, 25f);
+            }
+            else if (newVal > 0 && oldVal <= 0)
+            {
+                ragdoll.DisableRagdoll();
+                // Ensure correct model is active/rebound
+                ApplyTeamModel(teamId.Value); 
+            }
         }
     }
 
@@ -161,6 +189,8 @@ public class PlayerController : NetworkBehaviour
             }
         }
 
+        if (ragdoll != null) ragdoll.Init();
+
         if (anim != null)
         {
             anim.Rebind();
@@ -193,22 +223,22 @@ public class PlayerController : NetworkBehaviour
     // ... (Move, Look, Shoot, TakeDamage, Respawn 등 나머지 함수들은 아까랑 똑같이 유지) ...
     // (복붙 편하게 하라고 아래에 핵심 함수들 다시 넣어줌)
 
-    public void Respawn()
+    public void Respawn(int spawnIndex)
     {
         hp.Value = 100;
-        RespawnClientRpc(teamId.Value);
+        RespawnClientRpc(teamId.Value, spawnIndex);
     }
 
     [ClientRpc]
-    private void RespawnClientRpc(int team)
+    private void RespawnClientRpc(int team, int spawnIndex)
     {
         if (!IsOwner) return;
-        MoveToSpawnPoints(team);
+        MoveToSpawnPoints(team, spawnIndex);
         if (UIManager.Instance != null) UIManager.Instance.UpdateHP(100, team);
         SetPlayerState(true);
     }
 
-    void MoveToSpawnPoints(int team)
+    void MoveToSpawnPoints(int team, int spawnIndex = -1)
     {
         if (RoundGameManager.Instance == null) return;
         Transform targetSpawn = (team == 0) ? RoundGameManager.Instance.spawnPointA : RoundGameManager.Instance.spawnPointB;
@@ -216,7 +246,8 @@ public class PlayerController : NetworkBehaviour
         if (targetSpawn == null) return;
 
         if (controller != null) controller.enabled = false;
-        transform.position = targetSpawn.position;
+        if (spawnIndex == -1) spawnIndex = (int)(OwnerClientId % 4);
+        transform.position = targetSpawn.position + targetSpawn.right * (spawnIndex * 2.0f);
         transform.rotation = targetSpawn.rotation;
         if (controller != null) controller.enabled = true;
     }
@@ -260,8 +291,13 @@ public class PlayerController : NetworkBehaviour
 
     void Shoot()
     {
+        // 무기 발사 체크 (발사속도, 탄약)
+        if (weaponController != null && !weaponController.TryShoot()) return;
+        
+        float range = weaponController != null ? weaponController.GetCurrentRange() : 100f;
+        
         RaycastHit hit;
-        if (Physics.Raycast(myCam.transform.position, myCam.transform.forward, out hit, 100f))
+        if (Physics.Raycast(myCam.transform.position, myCam.transform.forward, out hit, range))
         {
             if (hit.transform.CompareTag("Player"))
             {
@@ -269,20 +305,21 @@ public class PlayerController : NetworkBehaviour
                 if (targetScript != null)
                 {
                     if (targetScript.teamId.Value == teamId.Value) return;
-                    SubmitHitServerRpc(targetScript.NetworkObjectId);
+                    int damage = weaponController != null ? weaponController.GetCurrentDamage() : 10;
+                    SubmitHitServerRpc(targetScript.NetworkObjectId, damage);
                 }
             }
         }
     }
 
     [ServerRpc]
-    void SubmitHitServerRpc(ulong targetId)
+    void SubmitHitServerRpc(ulong targetId, int damage)
     {
         if (NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(targetId, out var targetObj))
         {
             var targetScript = targetObj.GetComponent<PlayerController>();
             if (targetScript != null && targetScript.hp.Value > 0)
-                targetScript.TakeDamage(10);
+                targetScript.TakeDamage(damage);
         }
     }
 
@@ -295,7 +332,14 @@ public class PlayerController : NetworkBehaviour
 
     void SetPlayerState(bool isActive)
     {
-        if (isActive) ApplyTeamModel(teamId.Value);
+        if (isActive)
+        {
+            // 래그돌 먼저 끄기 (뼈 위치 복원)
+            if (ragdoll != null) ragdoll.DisableRagdoll();
+            
+            // 모델 다시 표시
+            ApplyTeamModel(teamId.Value);
+        }
         else
         {
             if (redModel) redModel.SetActive(false);
@@ -305,3 +349,4 @@ public class PlayerController : NetworkBehaviour
         if (IsOwner) this.enabled = isActive;
     }
 }
+

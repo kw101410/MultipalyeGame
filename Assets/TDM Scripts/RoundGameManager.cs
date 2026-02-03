@@ -1,24 +1,24 @@
-using Unity.Netcode;
+ï»¿using Unity.Netcode;
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
 public class RoundGameManager : NetworkBehaviour
 {
-    public static RoundGameManager Instance; // ½Ì±ÛÅæ (´Ï°¡ °®´Ù ¾²±â ÆíÇÏ°Ô)
+    public static RoundGameManager Instance; // ï¿½Ì±ï¿½ï¿½ï¿½ (ï¿½Ï°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ï°ï¿½)
 
-    [Header("½ºÆù Æ÷ÀÎÆ® (ÇÊ¼ö ¿¬°á)")]
-    public Transform spawnPointA; // ·¹µåÆÀ (Team 0)
-    public Transform spawnPointB; // ºí·çÆÀ (Team 1)
+    [Header("ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Æ® (ï¿½Ê¼ï¿½ ï¿½ï¿½ï¿½ï¿½)")]
+    public Transform spawnPointA; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Team 0)
+    public Transform spawnPointB; // ï¿½ï¿½ï¿½ï¿½ï¿½ (Team 1)
 
-    [Header("¶ó¿îµå ¼³Á¤")]
-    public int TargetRoundWin = 3; // 3ÆÇ ¼±½ÂÁ¦
+    [Header("ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½")]
+    public int TargetRoundWin = 3; // 3ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-    [Header("Á¡¼ö (µ¿±âÈ­)")]
+    [Header("ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½È­)")]
     public NetworkVariable<int> RedRoundScore = new NetworkVariable<int>(0);
     public NetworkVariable<int> BlueRoundScore = new NetworkVariable<int>(0);
 
-    // ¶ó¿îµå ÁøÇà ÁßÀÎÁö Ã¼Å©
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Ã¼Å©
     private bool isRoundPlaying = false;
 
     private void Awake()
@@ -35,24 +35,24 @@ public class RoundGameManager : NetworkBehaviour
         }
     }
 
-    // °ÔÀÓ ½ÃÀÛ (¾à°£ÀÇ ´ë±â ÈÄ ½ÃÀÛ)
+    // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½à°£ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
     private IEnumerator StartGameRoutine()
     {
-        yield return new WaitForSeconds(2f); // Á¢¼Ó ´ë±â
+        yield return new WaitForSeconds(2f); // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½
         StartRound();
     }
 
     private void StartRound()
     {
-        isRoundPlaying = true;
+        isRoundPlaying = true; int redCount = 0; int blueCount = 0;
 
-        // ¡ÚÇÙ½É: ¸ðµç ÇÃ·¹ÀÌ¾î ºÎÈ° ¹× À§Ä¡ ÃÊ±âÈ­
+        // ï¿½ï¿½ï¿½Ù½ï¿½: ï¿½ï¿½ï¿½ ï¿½Ã·ï¿½ï¿½Ì¾ï¿½ ï¿½ï¿½È° ï¿½ï¿½ ï¿½ï¿½Ä¡ ï¿½Ê±ï¿½È­
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
             var player = client.PlayerObject.GetComponent<PlayerController>();
             if (player != null)
             {
-                player.Respawn(); // ´Ï°¡ Â§ ±× ÇÔ¼ö È£Ãâ
+                int spawnIndex = (player.teamId.Value == 0) ? redCount++ : blueCount++; player.Respawn(spawnIndex); // ï¿½Ï°ï¿½ Â§ ï¿½ï¿½ ï¿½Ô¼ï¿½ È£ï¿½ï¿½
             }
         }
 
@@ -62,88 +62,88 @@ public class RoundGameManager : NetworkBehaviour
     [ClientRpc]
     private void NotifyRoundStartClientRpc()
     {
-        Debug.Log(">>> ¶ó¿îµå ½ÃÀÛ! <<<");
-        // ¿©±â¿¡ UI "Round Start" ¶ç¿ì´Â ÄÚµå ³ÖÀ¸¸é µÊ
+        Debug.Log(">>> ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½! <<<");
+        // ï¿½ï¿½ï¿½â¿¡ UI "Round Start" ï¿½ï¿½ï¿½ï¿½ ï¿½Úµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
     }
 
-    // ¡Ú ´Ï°¡ PlayerController¿¡¼­ È£ÃâÇÏ´Â ±× ÇÔ¼ö
+    // ï¿½ï¿½ ï¿½Ï°ï¿½ PlayerControllerï¿½ï¿½ï¿½ï¿½ È£ï¿½ï¿½ï¿½Ï´ï¿½ ï¿½ï¿½ ï¿½Ô¼ï¿½
     public void OnPlayerDied(int deadTeamId)
     {
         if (!IsServer || !isRoundPlaying) return;
 
-        // Á×Àº ³ð ÆÀÀ» È®ÀÎÇßÀ¸´Ï, ±× ÆÀÀÌ 'Àü¸ê'Çß´ÂÁö Ã¼Å©
+        // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ È®ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½, ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ 'ï¿½ï¿½ï¿½ï¿½'ï¿½ß´ï¿½ï¿½ï¿½ Ã¼Å©
         if (CheckTeamWipedOut(deadTeamId))
         {
-            // deadTeamId°¡ 0(Red)ÀÌ¸é Blue(1) ½Â¸®
+            // deadTeamIdï¿½ï¿½ 0(Red)ï¿½Ì¸ï¿½ Blue(1) ï¿½Â¸ï¿½
             int winnerTeam = (deadTeamId == 0) ? 1 : 0;
             EndRound(winnerTeam);
         }
     }
 
-    // ÇØ´ç ÆÀÀÌ ´Ù Á×¾ú´ÂÁö È®ÀÎ (ÆÑÆ®Ã¼Å©: ºñÈ¿À²ÀûÀÌ¾îµµ È®½ÇÇÑ ¹æ¹ý)
+    // ï¿½Ø´ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½×¾ï¿½ï¿½ï¿½ï¿½ï¿½ È®ï¿½ï¿½ (ï¿½ï¿½Æ®Ã¼Å©: ï¿½ï¿½È¿ï¿½ï¿½ï¿½ï¿½ï¿½Ì¾îµµ È®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½)
     private bool CheckTeamWipedOut(int teamId)
     {
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
             var player = client.PlayerObject.GetComponent<PlayerController>();
 
-            // °°Àº ÆÀÀÎµ¥ Ã¼·ÂÀÌ 0º¸´Ù Å« ³ðÀÌ ÇÑ ¸íÀÌ¶óµµ ÀÖÀ¸¸é Àü¸ê ¾Æ´Ô
+            // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Îµï¿½ Ã¼ï¿½ï¿½ï¿½ï¿½ 0ï¿½ï¿½ï¿½ï¿½ Å« ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½Ì¶ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Æ´ï¿½
             if (player != null && player.teamId.Value == teamId && player.hp.Value > 0)
             {
-                return false; // »ýÁ¸ÀÚ ÀÖÀ½
+                return false; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
             }
         }
-        return true; // »ýÁ¸ÀÚ ¾øÀ½ -> Àü¸ê
+        return true; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ -> ï¿½ï¿½ï¿½ï¿½
     }
 
     private void EndRound(int winnerTeam)
     {
         isRoundPlaying = false;
 
-        // Á¡¼ö ¿Ã¸®±â
+        // ï¿½ï¿½ï¿½ï¿½ ï¿½Ã¸ï¿½ï¿½ï¿½
         if (winnerTeam == 0) RedRoundScore.Value += 1;
         else BlueRoundScore.Value += 1;
 
-        Debug.Log($"¶ó¿îµå Á¾·á! ½Â¸®: {(winnerTeam == 0 ? "RED" : "BLUE")}");
+        Debug.Log($"ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½! ï¿½Â¸ï¿½: {(winnerTeam == 0 ? "RED" : "BLUE")}");
 
-        // ÃÖÁ¾ ¿ì½Â Ã¼Å©
+        // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ Ã¼Å©
         if (RedRoundScore.Value >= TargetRoundWin || BlueRoundScore.Value >= TargetRoundWin)
         {
             EndMatch(winnerTeam);
         }
         else
         {
-            // ´ÙÀ½ ¶ó¿îµå ÁØºñ
+            // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Øºï¿½
             StartCoroutine(NextRoundRoutine(winnerTeam));
         }
     }
 
     private IEnumerator NextRoundRoutine(int winnerTeam)
     {
-        // °á°ú º¸¿©ÁÖ±â (RPC·Î UI ¶ç¿ö¶ó)
+        // ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ (RPCï¿½ï¿½ UI ï¿½ï¿½ï¿½ï¿½ï¿½)
         ShowRoundResultClientRpc(winnerTeam);
 
-        yield return new WaitForSeconds(3f); // 3ÃÊ ´ë±â
+        yield return new WaitForSeconds(3f); // 3ï¿½ï¿½ ï¿½ï¿½ï¿½
 
-        StartRound(); // ´ÙÀ½ ¶ó¿îµå ½ÃÀÛ (¿©±â¼­ ´Ù½Ã Respawn È£ÃâµÊ)
+        StartRound(); // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½â¼­ ï¿½Ù½ï¿½ Respawn È£ï¿½ï¿½ï¿½)
     }
 
     [ClientRpc]
     private void ShowRoundResultClientRpc(int winnerTeam)
     {
         string winner = (winnerTeam == 0) ? "RED" : "BLUE";
-        Debug.Log($"{winner} ÆÀ ¶ó¿îµå ½Â¸®!");
+        Debug.Log($"{winner} ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Â¸ï¿½!");
         // UIManager.Instance.ShowRoundResult(winner);
     }
 
     private void EndMatch(int finalWinner)
     {
-        Debug.Log("¸ÅÄ¡ Á¾·á! ·Îºñ º¹±Í ½ÃÄö½º °¡µ¿");
+        Debug.Log("ï¿½ï¿½Ä¡ ï¿½ï¿½ï¿½ï¿½! ï¿½Îºï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½");
 
-        // 1. ¸ðµç Å¬¶óÀÌ¾ðÆ®¿¡°Ô ÃÖÁ¾ °á°ú º¸¿©ÁÖ±â
+        // 1. ï¿½ï¿½ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½
         ShowFinalResultClientRpc(finalWinner);
 
-        // 2. 5ÃÊ µÚ¿¡ ·Îºñ·Î ÀÌµ¿ (ÄÚ·çÆ¾ ½ÃÀÛ)
+        // 2. 5ï¿½ï¿½ ï¿½Ú¿ï¿½ ï¿½Îºï¿½ï¿½ ï¿½Ìµï¿½ (ï¿½Ú·ï¿½Æ¾ ï¿½ï¿½ï¿½ï¿½)
         StartCoroutine(ReturnToLobbyRoutine());
     }
 
@@ -157,20 +157,20 @@ public class RoundGameManager : NetworkBehaviour
             UIManager.Instance.ShowFinalResult(winner);
         }
 
-        // ÃàÆ÷ °°Àº °Å ÅÍ¶ß¸®°í ½ÍÀ¸¸é ¿©±â¼­ ÇÔ¼ö È£Ãâ
+        // ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Í¶ß¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½â¼­ ï¿½Ô¼ï¿½ È£ï¿½ï¿½
         // EffectManager.Instance.PlayConfetti(); 
     }
 
     private IEnumerator ReturnToLobbyRoutine()
     {
-        // 5ÃÊ ´ë±â (°á°ú °¨»ó Å¸ÀÓ)
+        // 5ï¿½ï¿½ ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Å¸ï¿½ï¿½)
         yield return new WaitForSeconds(5f);
 
-        // ¡Ú ÇÙ½É: ³×Æ®¿öÅ© ¾À ÀüÈ¯
-        // ±×³É SceneManager.LoadScene ¾²¸é ³Ê È¥ÀÚ ÀÌµ¿ÇÏ°í Å¬¶óÀÌ¾ðÆ®µéÀº ¹Ì¾Æ µÊ.
-        // ÀÌ°É ½á¾ß ¼­¹ö°¡ "¾ß ´Ù µû¶ó¿Í!" ÇÏ°í ÁÙÁÙÀÌ µ¥¸®°í °¨.
+        // ï¿½ï¿½ ï¿½Ù½ï¿½: ï¿½ï¿½Æ®ï¿½ï¿½Å© ï¿½ï¿½ ï¿½ï¿½È¯
+        // ï¿½×³ï¿½ SceneManager.LoadScene ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ È¥ï¿½ï¿½ ï¿½Ìµï¿½ï¿½Ï°ï¿½ Å¬ï¿½ï¿½ï¿½Ì¾ï¿½Æ®ï¿½ï¿½ï¿½ï¿½ ï¿½Ì¾ï¿½ ï¿½ï¿½.
+        // ï¿½Ì°ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ "ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½!" ï¿½Ï°ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½.
 
-        // "LobbyScene"Àº ´Ï°¡ ¸¸µç ·Îºñ ¾À ÀÌ¸§À¸·Î ¹Ù²ã¶ó. (¿ÀÅ¸ ³ª¸é ¿¡·¯ ³²)
+        // "LobbyScene"ï¿½ï¿½ ï¿½Ï°ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Îºï¿½ ï¿½ï¿½ ï¿½Ì¸ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ù²ï¿½ï¿½. (ï¿½ï¿½Å¸ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½)
         NetworkManager.Singleton.SceneManager.LoadScene("LobbyScene", UnityEngine.SceneManagement.LoadSceneMode.Single);
     }
 }
