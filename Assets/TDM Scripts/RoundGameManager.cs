@@ -44,15 +44,21 @@ public class RoundGameManager : NetworkBehaviour
 
     private void StartRound()
     {
-        isRoundPlaying = true; int redCount = 0; int blueCount = 0;
+        isRoundPlaying = true; 
+        int redCount = 0; 
+        int blueCount = 0;
 
-        // ���ٽ�: ��� �÷��̾� ��Ȱ �� ��ġ �ʱ�ȭ
+        // 모든 플레이어 부활 및 위치 초기화
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
+            // PlayerObject가 null이거나 스폰되지 않았으면 스킵
+            if (client.PlayerObject == null || !client.PlayerObject.IsSpawned) continue;
+            
             var player = client.PlayerObject.GetComponent<PlayerController>();
-            if (player != null)
+            if (player != null && player.IsSpawned)
             {
-                int spawnIndex = (player.teamId.Value == 0) ? redCount++ : blueCount++; player.Respawn(spawnIndex); // �ϰ� § �� �Լ� ȣ��
+                int spawnIndex = (player.teamId.Value == 0) ? redCount++ : blueCount++;
+                player.Respawn(spawnIndex);
             }
         }
 

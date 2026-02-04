@@ -32,6 +32,10 @@ public class WeaponData
     public float fireRate; // 발사 간격 (초)
     public int maxAmmo;
     public GameObject model;
+    
+    [Header("손 위치 오프셋")]
+    public Vector3 positionOffset;  // 위치 조정
+    public Vector3 rotationOffset;  // 회전 조정
 }
 
 public class WeaponController : NetworkBehaviour
@@ -51,9 +55,12 @@ public class WeaponController : NetworkBehaviour
     private float nextFireTime;
     
     [Header("무기 장착 위치")]
-    public Transform weaponHolder; // 손 뼈 (RightHand)
+    public Transform redWeaponHolder;   // Red Model 손 (RightHand)
+    public Transform blueWeaponHolder;  // Blue Model 손 (RightHand)
+    public Transform fpsWeaponHolder;   // FPS Arms 손 (1인칭용)
     
-    private GameObject currentWeaponModel;
+    private GameObject currentWeaponModel;     // 현재 활성 팀의 3인칭 무기
+    private GameObject currentFPSWeaponModel;  // 1인칭 무기
     private PlayerController playerController;
     private Camera playerCam;
 
@@ -150,19 +157,46 @@ public class WeaponController : NetworkBehaviour
         {
             Destroy(currentWeaponModel);
         }
-        
-        // 새 무기 모델 생성
-        if (weapon.model != null && weaponHolder != null)
+        if (currentFPSWeaponModel != null)
         {
-            currentWeaponModel = Instantiate(weapon.model, weaponHolder);
-            currentWeaponModel.transform.localPosition = Vector3.zero;
-            currentWeaponModel.transform.localRotation = Quaternion.identity;
+            Destroy(currentFPSWeaponModel);
         }
+        
+        // 현재 팀에 맞는 WeaponHolder 선택
+        int teamId = playerController != null ? playerController.teamId.Value : 0;
+        Transform activeWeaponHolder = (teamId == 0) ? redWeaponHolder : blueWeaponHolder;
+        
+        // 3인칭 무기 모델 생성 (다른 플레이어가 볼 용도)
+        if (weapon.model != null && activeWeaponHolder != null)
+        {
+            currentWeaponModel = Instantiate(weapon.model, activeWeaponHolder);
+            currentWeaponModel.transform.localPosition = weapon.positionOffset;
+            currentWeaponModel.transform.localRotation = Quaternion.Euler(weapon.rotationOffset);
+            
+            // 내 캐릭터의 3인칭 무기는 ThirdPerson 레이어로 설정 (내 카메라에서 안 보임)
+            if (IsOwner)
+            {
+                SetLayerRecursively(currentWeaponModel, LayerMask.NameToLayer("ThirdPerson"));
+            }
+        }
+        
+        // 1인칭 무기는 Easy FPS에 이미 있으므로 생성하지 않음
+        // (fpsWeaponHolder 사용 안 함)
         
         // 탄약 초기화
         currentAmmo = weapon.maxAmmo;
         
         Debug.Log($"무기 장착: {weapon.weaponName}");
+    }
+    
+    void SetLayerRecursively(GameObject obj, int layer)
+    {
+        if (obj == null || layer < 0 || layer > 31) return;
+        obj.layer = layer;
+        foreach (Transform child in obj.transform)
+        {
+            SetLayerRecursively(child.gameObject, layer);
+        }
     }
     
     WeaponData GetWeaponForSlot(WeaponSlot slot)
@@ -220,5 +254,22 @@ public class WeaponController : NetworkBehaviour
     public PrimaryWeaponType GetPrimaryType()
     {
         return selectedPrimaryType.Value;
+    }
+    
+    /// <summary>
+    /// UI에서 주무기 선택 시 호출
+    /// </summary>
+    public void SelectPrimaryWeapon(PrimaryWeaponType weaponType)
+    {
+        if (!IsOwner) return;
+        ChangePrimaryTypeServerRpc(weaponType);
+    }
+    
+    /// <summary>
+    /// 현재 장착된 무기 모델의 Transform 반환 (IK용)
+    /// </summary>
+    public Transform GetCurrentWeaponModel()
+    {
+        return currentWeaponModel != null ? currentWeaponModel.transform : null;
     }
 }

@@ -225,6 +225,9 @@ public class PlayerController : NetworkBehaviour
 
     public void Respawn(int spawnIndex)
     {
+        // 스폰되지 않은 상태에서는 RPC 호출 불가
+        if (!IsSpawned) return;
+        
         hp.Value = 100;
         RespawnClientRpc(teamId.Value, spawnIndex);
     }
