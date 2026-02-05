@@ -89,6 +89,31 @@ public class WeaponController : NetworkBehaviour
         
         currentSlot.OnValueChanged += OnSlotChanged;
         selectedPrimaryType.OnValueChanged += OnPrimaryTypeChanged;
+        // Start에서 EquipSlot 호출하지 않음 - OnNetworkSpawn에서 처리
+    }
+    
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+        
+        // 팀 변경 이벤트 구독
+        if (playerController != null)
+        {
+            playerController.teamId.OnValueChanged += OnTeamChanged;
+        }
+        
+        // 약간의 딜레이 후 무기 장착 (팀 ID가 설정된 후)
+        Invoke(nameof(DelayedEquip), 0.5f);
+    }
+    
+    void DelayedEquip()
+    {
+        EquipSlot(currentSlot.Value);
+    }
+    
+    void OnTeamChanged(int oldVal, int newVal)
+    {
+        // 팀이 바뀌면 무기 재장착 (새 팀의 WeaponHolder 사용)
         EquipSlot(currentSlot.Value);
     }
 

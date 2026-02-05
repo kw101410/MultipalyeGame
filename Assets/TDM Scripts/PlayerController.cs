@@ -34,6 +34,17 @@ public class PlayerController : NetworkBehaviour
     public Unity.Netcode.Components.NetworkAnimator networkAnimator;
     private AudioListener listener;
 
+    [Header("Audio Settings")]
+    public AudioSource audioSource;
+    public AudioClip walkSound;
+    public AudioClip runSound;
+    public AudioClip jumpSound;
+    public AudioClip hitSound;
+    public AudioClip deathSound;
+
+    private float nextStepTime = 0f;
+    private float stepInterval = 0.5f; // 발소리 간격
+
     private RagdollController ragdoll;
     private WeaponController weaponController;
 
@@ -43,10 +54,10 @@ public class PlayerController : NetworkBehaviour
         weaponController = GetComponent<WeaponController>();
         listener = GetComponentInChildren<AudioListener>();
         ragdoll = GetComponent<RagdollController>();
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
         if (networkAnimator == null) networkAnimator = GetComponent<Unity.Netcode.Components.NetworkAnimator>();
         
         // 시작 시 기본 모델 설정 (Red 모델을 기본으로, 나중에 팀 배정되면 변경됨)
-        // NetworkAnimator 초기화 전에 Animator가 있어야 에러 안 남
         if (redModel != null)
         {
             redModel.SetActive(true);
@@ -79,8 +90,7 @@ public class PlayerController : NetworkBehaviour
         // 2. [공통] 값이 '바뀔 때' 실행될 로직 등록
         teamId.OnValueChanged += OnTeamChanged;
 
-        // ★ 핵심 1: 이미 값이 들어와 있는 상태면 이벤트가 안 터짐. 
-        // 그래서 수동으로 한 번 "내 팀에 맞는 옷 입어라"고 명령해야 함.
+        // ★ 핵심: 이미 값이 들어와 있는 상태면 이벤트가 안 터짐. 수동 호출.
         ApplyTeamModel(teamId.Value);
 
         // 3. [내 캐릭터] 초기 설정
@@ -104,7 +114,6 @@ public class PlayerController : NetworkBehaviour
         {
             // 남의 캐릭터면 카메라랑 리스너 끄기
             if (myCam != null) myCam.enabled = false;
-            // listener already assigned in Awake, just disable
             if (listener != null) listener.enabled = false; 
             
             // Non-owner also needs to listen to HP for ragdoll
@@ -128,29 +137,20 @@ public class PlayerController : NetworkBehaviour
             else if (newVal > 0 && oldVal <= 0)
             {
                 ragdoll.DisableRagdoll();
-                // Ensure correct model is active/rebound
                 ApplyTeamModel(teamId.Value); 
             }
         }
     }
 
-    // 팀 변경 시 실행될 함수 (이벤트 연결용)
     private void OnTeamChanged(int oldVal, int newVal)
     {
         ApplyTeamModel(newVal);
-
-        // 내 거면 스폰 포인트로 이동도 시켜줌
         if (IsOwner) MoveToSpawnPoints(newVal);
     }
 
     private void ApplyTeamModel(int team)
     {
-        // 모델 연결 안 되어있으면 에러 띄워서 알려줌(개발 인스펙터 확인 좀)
-        if (redModel == null || blueModel == null)
-        {
-            Debug.LogError($"[{gameObject.name}] 모델 연결 안됨! Inspector 확인해라.");
-            return;
-        }
+        if (redModel == null || blueModel == null) return;
 
         redModel.SetActive(false);
         blueModel.SetActive(false);
@@ -166,7 +166,6 @@ public class PlayerController : NetworkBehaviour
             blueModel.SetActive(true);
             activeModel = blueModel;
         }
-        // -1이면 둘 다 꺼진 상태 유지
 
         // 활성화된 모델에서 Animator 가져와서 연결
         if (activeModel != null)
@@ -194,18 +193,15 @@ public class PlayerController : NetworkBehaviour
         if (anim != null)
         {
             anim.Rebind();
-            anim.applyRootMotion = false; // Rebind 후에 꺼야 초기화되지 않음
+            anim.applyRootMotion = false;
         }
     }
-
-    // ... (이하 Respawn, Update, Move, Look 등 기존과 동일) ...
-    // ... (중략 하지 말고 아까 코드 그대로 쓰되 Update에 이거 하나만 추가) ...
 
     void Update()
     {
         if (!IsSpawned || !IsOwner) return;
 
-        // ★ 핵심 2: 게임 화면 클릭하면 마우스 다시 잡기 (에디터 문제 해결)
+        // 게임 화면 클릭하면 마우스 다시 잡기 (에디터 문제 해결)
         if (Input.GetMouseButtonDown(0))
         {
             Cursor.lockState = CursorLockMode.Locked;
@@ -218,41 +214,6 @@ public class PlayerController : NetworkBehaviour
         Move();
 
         if (Input.GetButtonDown("Fire1")) Shoot();
-    }
-
-    // ... (Move, Look, Shoot, TakeDamage, Respawn 등 나머지 함수들은 아까랑 똑같이 유지) ...
-    // (복붙 편하게 하라고 아래에 핵심 함수들 다시 넣어줌)
-
-    public void Respawn(int spawnIndex)
-    {
-        // 스폰되지 않은 상태에서는 RPC 호출 불가
-        if (!IsSpawned) return;
-        
-        hp.Value = 100;
-        RespawnClientRpc(teamId.Value, spawnIndex);
-    }
-
-    [ClientRpc]
-    private void RespawnClientRpc(int team, int spawnIndex)
-    {
-        if (!IsOwner) return;
-        MoveToSpawnPoints(team, spawnIndex);
-        if (UIManager.Instance != null) UIManager.Instance.UpdateHP(100, team);
-        SetPlayerState(true);
-    }
-
-    void MoveToSpawnPoints(int team, int spawnIndex = -1)
-    {
-        if (RoundGameManager.Instance == null) return;
-        Transform targetSpawn = (team == 0) ? RoundGameManager.Instance.spawnPointA : RoundGameManager.Instance.spawnPointB;
-
-        if (targetSpawn == null) return;
-
-        if (controller != null) controller.enabled = false;
-        if (spawnIndex == -1) spawnIndex = (int)(OwnerClientId % 4);
-        transform.position = targetSpawn.position + targetSpawn.right * (spawnIndex * 2.0f);
-        transform.rotation = targetSpawn.rotation;
-        if (controller != null) controller.enabled = true;
     }
 
     void Look()
@@ -277,6 +238,17 @@ public class PlayerController : NetworkBehaviour
         float z = Input.GetAxis("Vertical");
 
         Vector3 move = transform.right * x + transform.forward * z;
+        
+        // 이동 중이면 발소리 재생
+        if (isGrounded && move.magnitude > 0.1f)
+        {
+            if (Time.time >= nextStepTime)
+            {
+                PlayFootstepSound(true); 
+                nextStepTime = Time.time + stepInterval;
+            }
+        }
+
         controller.Move(move * speed * Time.deltaTime);
 
         if (anim != null)
@@ -286,15 +258,56 @@ public class PlayerController : NetworkBehaviour
         }
 
         if (Input.GetButtonDown("Jump") && isGrounded)
+        {
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            PlayJumpSoundServerRpc();
+        }
 
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
     }
 
+    void PlayFootstepSound(bool isWalk)
+    {
+        PlayStepSoundServerRpc(isWalk);
+    }
+
+    [ServerRpc]
+    void PlayStepSoundServerRpc(bool isWalk)
+    {
+        PlayStepSoundClientRpc(isWalk);
+    }
+
+    [ClientRpc]
+    void PlayStepSoundClientRpc(bool isWalk)
+    {
+        if (audioSource == null) return;
+        AudioClip clip = isWalk ? walkSound : runSound;
+        if (clip != null)
+        {
+            audioSource.pitch = Random.Range(0.9f, 1.1f);
+            audioSource.PlayOneShot(clip, 0.6f);
+        }
+    }
+
+    [ServerRpc]
+    void PlayJumpSoundServerRpc()
+    {
+        PlayJumpSoundClientRpc();
+    }
+
+    [ClientRpc]
+    void PlayJumpSoundClientRpc()
+    {
+        if (audioSource != null && jumpSound != null)
+        {
+            audioSource.pitch = 1.0f;
+            audioSource.PlayOneShot(jumpSound);
+        }
+    }
+
     void Shoot()
     {
-        // 무기 발사 체크 (발사속도, 탄약)
         if (weaponController != null && !weaponController.TryShoot()) return;
         
         float range = weaponController != null ? weaponController.GetCurrentRange() : 100f;
@@ -329,18 +342,73 @@ public class PlayerController : NetworkBehaviour
     public void TakeDamage(int damage)
     {
         if (hp.Value <= 0) return;
+        
+        // 피격 소리 (RPC)
+        PlayHitSoundClientRpc();
+
         hp.Value -= damage;
-        if (hp.Value <= 0 && IsServer) RoundGameManager.Instance?.OnPlayerDied(teamId.Value);
+        if (hp.Value <= 0 && IsServer)
+        {
+            RoundGameManager.Instance?.OnPlayerDied(teamId.Value);
+            PlayDeathSoundClientRpc();
+        }
+    }
+
+    [ClientRpc]
+    void PlayHitSoundClientRpc()
+    {
+        if (audioSource != null && hitSound != null)
+        {
+            audioSource.pitch = Random.Range(0.9f, 1.1f);
+            audioSource.PlayOneShot(hitSound);
+        }
+    }
+
+    [ClientRpc]
+    void PlayDeathSoundClientRpc()
+    {
+        if (audioSource != null && deathSound != null)
+        {
+            audioSource.pitch = 1.0f;
+            audioSource.PlayOneShot(deathSound);
+        }
+    }
+
+    public void Respawn(int spawnIndex)
+    {
+        if (!IsSpawned) return;
+        hp.Value = 100;
+        RespawnClientRpc(teamId.Value, spawnIndex);
+    }
+
+    [ClientRpc]
+    private void RespawnClientRpc(int team, int spawnIndex)
+    {
+        if (!IsOwner) return;
+        MoveToSpawnPoints(team, spawnIndex);
+        if (UIManager.Instance != null) UIManager.Instance.UpdateHP(100, team);
+        SetPlayerState(true);
+    }
+
+    void MoveToSpawnPoints(int team, int spawnIndex = -1)
+    {
+        if (RoundGameManager.Instance == null) return;
+        Transform targetSpawn = (team == 0) ? RoundGameManager.Instance.spawnPointA : RoundGameManager.Instance.spawnPointB;
+
+        if (targetSpawn == null) return;
+
+        if (controller != null) controller.enabled = false;
+        if (spawnIndex == -1) spawnIndex = (int)(OwnerClientId % 4);
+        transform.position = targetSpawn.position + targetSpawn.right * (spawnIndex * 2.0f);
+        transform.rotation = targetSpawn.rotation;
+        if (controller != null) controller.enabled = true;
     }
 
     void SetPlayerState(bool isActive)
     {
         if (isActive)
         {
-            // 래그돌 먼저 끄기 (뼈 위치 복원)
             if (ragdoll != null) ragdoll.DisableRagdoll();
-            
-            // 모델 다시 표시
             ApplyTeamModel(teamId.Value);
         }
         else
@@ -352,4 +420,3 @@ public class PlayerController : NetworkBehaviour
         if (IsOwner) this.enabled = isActive;
     }
 }
-
