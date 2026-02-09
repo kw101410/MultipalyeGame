@@ -14,7 +14,7 @@ public class FPSArmsFollow : MonoBehaviour
     
     [Header("회전 설정")]
     [Range(0f, 1f)]
-    public float rotationFollowAmount = 0.7f;  // 0 = 안 따라감, 1 = 완전히 따라감
+    public float rotationFollowAmount = 1.0f;  // 1 = 카메라와 완전히 일치
     
     [Header("부드러운 움직임")]
     public float smoothSpeed = 10f;

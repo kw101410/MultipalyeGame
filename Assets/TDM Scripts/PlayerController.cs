@@ -47,6 +47,7 @@ public class PlayerController : NetworkBehaviour
 
     private RagdollController ragdoll;
     private WeaponController weaponController;
+    private ThirdPersonSpineSync spineSync;
 
     private void Awake()
     {
@@ -309,6 +310,12 @@ public class PlayerController : NetworkBehaviour
     void Shoot()
     {
         if (weaponController != null && !weaponController.TryShoot()) return;
+        
+        // 공격 애니메이션 트리거 (칼/근접 무기)
+        if (anim != null)
+        {
+            anim.SetTrigger("Attack");
+        }
         
         float range = weaponController != null ? weaponController.GetCurrentRange() : 100f;
         

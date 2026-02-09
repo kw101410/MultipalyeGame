@@ -54,10 +54,14 @@ public class WeaponController : NetworkBehaviour
     private int currentAmmo;
     private float nextFireTime;
     
-    [Header("무기 장착 위치")]
-    public Transform redWeaponHolder;   // Red Model 손 (RightHand)
-    public Transform blueWeaponHolder;  // Blue Model 손 (RightHand)
+    [Header("무기 장착 위치 - 오른손")]
+    public Transform redWeaponHolder;   // Red Model 오른손 (RightHand)
+    public Transform blueWeaponHolder;  // Blue Model 오른손 (RightHand)
     public Transform fpsWeaponHolder;   // FPS Arms 손 (1인칭용)
+    
+    [Header("칼 장착 위치 - 왼손")]
+    public Transform redKnifeHolder;    // Red Model 왼손 (LeftHand)
+    public Transform blueKnifeHolder;   // Blue Model 왼손 (LeftHand)
     
     private GameObject currentWeaponModel;     // 현재 활성 팀의 3인칭 무기
     private GameObject currentFPSWeaponModel;  // 1인칭 무기
@@ -189,7 +193,19 @@ public class WeaponController : NetworkBehaviour
         
         // 현재 팀에 맞는 WeaponHolder 선택
         int teamId = playerController != null ? playerController.teamId.Value : 0;
-        Transform activeWeaponHolder = (teamId == 0) ? redWeaponHolder : blueWeaponHolder;
+        
+        // 칼은 왼손, 나머지는 오른손
+        Transform activeWeaponHolder;
+        if (slot == WeaponSlot.Melee)
+        {
+            // 칼은 왼손 홀더
+            activeWeaponHolder = (teamId == 0) ? redKnifeHolder : blueKnifeHolder;
+        }
+        else
+        {
+            // 총은 오른손 홀더
+            activeWeaponHolder = (teamId == 0) ? redWeaponHolder : blueWeaponHolder;
+        }
         
         // 3인칭 무기 모델 생성 (다른 플레이어가 볼 용도)
         if (weapon.model != null && activeWeaponHolder != null)
@@ -210,6 +226,20 @@ public class WeaponController : NetworkBehaviour
         
         // 탄약 초기화
         currentAmmo = weapon.maxAmmo;
+        
+        // 상체 애니메이션 전환을 위해 Animator 파라미터 설정
+        // WeaponSlot: 0=Primary, 1=Secondary, 2=Melee
+        if (playerController != null && playerController.anim != null)
+        {
+            var anim = playerController.anim;
+            Debug.Log($"[WeaponController] Animator: {anim.gameObject.name}, Controller: {(anim.runtimeAnimatorController != null ? anim.runtimeAnimatorController.name : "NULL")}");
+            anim.SetInteger("WeaponSlot", (int)slot);
+            Debug.Log($"[WeaponController] WeaponSlot = {(int)slot} 설정됨. 현재값: {anim.GetInteger("WeaponSlot")}");
+        }
+        else
+        {
+            Debug.LogWarning($"[WeaponController] Animator가 null!");
+        }
         
         Debug.Log($"무기 장착: {weapon.weaponName}");
     }
