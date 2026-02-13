@@ -1,6 +1,8 @@
 ﻿using Unity.Netcode;
 using UnityEngine;
 
+// 최적화: Animator 파라미터 해시 캐싱 (문자열 비교 제거)
+
 public class PlayerController : NetworkBehaviour
 {
     [Header("Base Components")]
@@ -13,6 +15,16 @@ public class PlayerController : NetworkBehaviour
     public float gravity = -9.81f;
 
     private Vector3 velocity;
+
+    // 최적화: Animator 파라미터 해시 캐싱
+    private static readonly int ANIM_INPUT_X = Animator.StringToHash("InputX");
+    private static readonly int ANIM_INPUT_Y = Animator.StringToHash("InputY");
+    private static readonly int ANIM_ATTACK = Animator.StringToHash("Attack");
+
+
+    // 최적화: 발소리 RPC 호출 빈도 줄이기
+    private int stepCounter = 0;
+    private const int STEP_SYNC_INTERVAL = 4; // 4걸음에 1번만 네트워크 동기화
 
     [Header("Look Settings")]
     public float mouseSensitivity = 100f;
@@ -41,6 +53,12 @@ public class PlayerController : NetworkBehaviour
     public AudioClip jumpSound;
     public AudioClip hitSound;
     public AudioClip deathSound;
+    
+    [Header("Effects")]
+    public GameObject bulletTrailPrefab; // 총알 궤적 프리팹 (LineRenderer)
+    public Vector3 muzzleOffset = new Vector3(0.3f, -0.2f, 0.5f); // 1인칭 궤적 시작 위치 오프셋 (우, 하, 전)
+    public Transform muzzlePoint; // ★ 1인칭용 총구 위치 (Inspector에서 빈 오브젝트 할당)
+    public GameObject bulletHolePrefab; // ★ 총알 자국 프리팹 (Quad + Material)
 
     private float nextStepTime = 0f;
     private float stepInterval = 0.5f; // 발소리 간격
@@ -48,6 +66,10 @@ public class PlayerController : NetworkBehaviour
     private RagdollController ragdoll;
     private WeaponController weaponController;
     private ThirdPersonSpineSync spineSync;
+    private PlayerController playerController;
+    private Camera playerCam;
+    
+
 
     private void Awake()
     {
@@ -65,10 +87,12 @@ public class PlayerController : NetworkBehaviour
             anim = redModel.GetComponent<Animator>();
             if (anim == null) anim = redModel.GetComponentInChildren<Animator>();
             
+            /*
             if (anim != null)
             {
                 anim.applyRootMotion = false; // In Place 애니메이션
             }
+            */
             
             if (networkAnimator != null && anim != null)
             {
@@ -127,6 +151,7 @@ public class PlayerController : NetworkBehaviour
         if (IsOwner && UIManager.Instance != null)
             UIManager.Instance.UpdateHP(newVal, teamId.Value);
 
+        // Ragdoll Logic Restored
         if (ragdoll != null)
         {
             if (newVal <= 0)
@@ -171,16 +196,24 @@ public class PlayerController : NetworkBehaviour
         // 활성화된 모델에서 Animator 가져와서 연결
         if (activeModel != null)
         {
+            // Root Motion Handler 추가 (땅 꺼짐 해결)
+            if (activeModel.GetComponent<RootMotionHandler>() == null)
+            {
+                activeModel.AddComponent<RootMotionHandler>();
+            }
+
             anim = activeModel.GetComponent<Animator>();
             if (anim == null)
             {
                 anim = activeModel.GetComponentInChildren<Animator>();
             }
             
+            /*
             if (anim != null)
             {
                 anim.applyRootMotion = false; // In Place 애니메이션
             }
+            */
             
             // NetworkAnimator에도 새 Animator 연결
             if (networkAnimator != null && anim != null)
@@ -189,32 +222,59 @@ public class PlayerController : NetworkBehaviour
             }
         }
 
-        if (ragdoll != null) ragdoll.Init();
+        // ★ 랙돌 초기화 (새 모델의 Animator 전달)
+        // ★ 랙돌 초기화 (새 모델의 Animator 전달)
+        if (ragdoll != null) ragdoll.Init(anim);
 
         if (anim != null)
         {
             anim.Rebind();
-            anim.applyRootMotion = false;
+            // anim.applyRootMotion = false;
         }
     }
+
+    private bool inputEnabled = false; // 기본값 false로 변경 (라운드 시작 전 활동 방지)
+
+    public void SetInputActive(bool active)
+    {
+        inputEnabled = active;
+    }
+    
+    // ...
 
     void Update()
     {
         if (!IsSpawned || !IsOwner) return;
 
         // 게임 화면 클릭하면 마우스 다시 잡기 (에디터 문제 해결)
-        if (Input.GetMouseButtonDown(0))
+        // 최적화: 이미 잠겨있으면 스킵
+        if (Input.GetMouseButtonDown(0) && Cursor.lockState != CursorLockMode.Locked)
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
 
-        if (hp.Value <= 0) return;
+        if (hp.Value <= 0 || !inputEnabled) return; // ★ 입력 비활성화 체크 추가
 
         Look();
         Move();
 
-        if (Input.GetButtonDown("Fire1")) Shoot();
+        if (weaponController != null)
+        {
+            // 라이플인지 확인 (주무기 슬롯 & 라이플 타입)
+            bool isRifle = weaponController.GetCurrentSlot() == WeaponSlot.Primary && 
+                           weaponController.GetPrimaryType() == PrimaryWeaponType.Rifle;
+            
+            // 라이플은 누르고 있으면 연사(GetButton), 나머지는 클릭당 1발(GetButtonDown)
+            if (isRifle ? Input.GetButton("Fire1") : Input.GetButtonDown("Fire1"))
+            {
+                Shoot();
+            }
+        }
+        else if (Input.GetButtonDown("Fire1"))
+        {
+            Shoot();
+        }
     }
 
     void Look()
@@ -241,7 +301,8 @@ public class PlayerController : NetworkBehaviour
         Vector3 move = transform.right * x + transform.forward * z;
         
         // 이동 중이면 발소리 재생
-        if (isGrounded && move.magnitude > 0.1f)
+        // 최적화: sqrMagnitude 사용 (sqrt 연산 제거)
+        if (isGrounded && move.sqrMagnitude > 0.01f)
         {
             if (Time.time >= nextStepTime)
             {
@@ -252,10 +313,11 @@ public class PlayerController : NetworkBehaviour
 
         controller.Move(move * speed * Time.deltaTime);
 
+        // 최적화: 해시로 Animator 파라미터 접근
         if (anim != null)
         {
-            anim.SetFloat("InputX", x);
-            anim.SetFloat("InputY", z);
+            anim.SetFloat(ANIM_INPUT_X, x);
+            anim.SetFloat(ANIM_INPUT_Y, z);
         }
 
         if (Input.GetButtonDown("Jump") && isGrounded)
@@ -266,11 +328,34 @@ public class PlayerController : NetworkBehaviour
 
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
+
+        /* Removed Layer Weight Hack */
+        
+
     }
 
     void PlayFootstepSound(bool isWalk)
     {
-        PlayStepSoundServerRpc(isWalk);
+        // 최적화: 로컬에서 즉시 재생 (지연 없음) + 간헐적으로만 네트워크 동기화
+        PlayStepSoundLocal(isWalk);
+        
+        stepCounter++;
+        if (stepCounter >= STEP_SYNC_INTERVAL)
+        {
+            stepCounter = 0;
+            PlayStepSoundServerRpc(isWalk);
+        }
+    }
+
+    void PlayStepSoundLocal(bool isWalk)
+    {
+        if (audioSource == null) return;
+        AudioClip clip = isWalk ? walkSound : runSound;
+        if (clip != null)
+        {
+            audioSource.pitch = Random.Range(0.9f, 1.1f);
+            audioSource.PlayOneShot(clip, 0.6f);
+        }
     }
 
     [ServerRpc]
@@ -282,6 +367,9 @@ public class PlayerController : NetworkBehaviour
     [ClientRpc]
     void PlayStepSoundClientRpc(bool isWalk)
     {
+        // 최적화: Owner는 이미 로컬에서 재생했으므로 스킵
+        if (IsOwner) return;
+        
         if (audioSource == null) return;
         AudioClip clip = isWalk ? walkSound : runSound;
         if (clip != null)
@@ -310,28 +398,148 @@ public class PlayerController : NetworkBehaviour
     void Shoot()
     {
         if (weaponController != null && !weaponController.TryShoot()) return;
-        
-        // 공격 애니메이션 트리거 (칼/근접 무기)
-        if (anim != null)
+
+        // 칼 공격일 때 처리 (궤적 없음)
+        if (weaponController != null && weaponController.GetCurrentSlot() == WeaponSlot.Melee)
         {
-            anim.SetTrigger("Attack");
+            // 3인칭 공격 애니메이션 (상체만 재생하여 하체 움직임 유지)
+            if (anim != null)
+            {
+                int ubIdx = anim.GetLayerIndex("Upper Body");
+                if (ubIdx >= 0)
+                {
+                    // 상체 레이어에서만 Knife Attack 재생 (하체 방해 X)
+                    // (이동 중 공격 가능)
+                    anim.CrossFade("Knife Attack", 0.1f, ubIdx);
+                }
+                else
+                {
+                    anim.SetTrigger(ANIM_ATTACK); // 백업
+                }
+            }
+            // FPS Arms + 전신 공격 모션
+            weaponController.TriggerMeleeAttack();
+            return; 
         }
         
         float range = weaponController != null ? weaponController.GetCurrentRange() : 100f;
+        int damage = weaponController != null ? weaponController.GetCurrentDamage() : 10;
         
+        Vector3 endPoint = myCam.transform.position + myCam.transform.forward * range;
+        
+        // Raycast로 적 감지
         RaycastHit hit;
         if (Physics.Raycast(myCam.transform.position, myCam.transform.forward, out hit, range))
         {
-            if (hit.transform.CompareTag("Player"))
+            endPoint = hit.point;
+
+            // GetComponentInParent로 부모까지 검색 (자식 Collider 히트 대응)
+            var targetScript = hit.transform.GetComponentInParent<PlayerController>();
+            
+            if (targetScript != null)
             {
-                var targetScript = hit.transform.GetComponent<PlayerController>();
-                if (targetScript != null)
-                {
-                    if (targetScript.teamId.Value == teamId.Value) return;
-                    int damage = weaponController != null ? weaponController.GetCurrentDamage() : 10;
-                    SubmitHitServerRpc(targetScript.NetworkObjectId, damage);
-                }
+                // 자기 자신을 맞춘 경우 무시
+                if (targetScript.NetworkObjectId == NetworkObjectId) return;
+                
+                // 같은 팀이면 무시
+                if (targetScript.teamId.Value == teamId.Value) return;
+                
+                SubmitHitServerRpc(targetScript.NetworkObjectId, damage);
             }
+            else
+            {
+                // 플레이어가 아니면 벽/바닥으로 간주 -> 총알 자국 생성 (서버 중계)
+                Debug.Log($"[Shoot] 벽/바닥 적중: {hit.collider.name}"); // 디버그 로그 추가
+                SpawnBulletHoleServerRpc(hit.point, hit.normal);
+            }
+        }
+        
+        // 총알 궤적 생성 (서버 중계)
+        SpawnBulletTrailServerRpc(endPoint);
+
+        // ★ 반동 적용 (총알 발사 후 마지막에 적용해야 정확도가 유지됨)
+        if (weaponController != null)
+        {
+            float rx, ry;
+            weaponController.GetCurrentRecoil(out rx, out ry);
+            ApplyRecoil(rx, ry);
+        }
+    }
+
+    void ApplyRecoil(float vertical, float horizontal)
+    {
+        // ... (생략: 기존 코드 유지)
+        xRotation -= vertical;
+        xRotation = Mathf.Clamp(xRotation, -90f, 90f);
+        float randomY = Random.Range(-horizontal, horizontal);
+        transform.Rotate(Vector3.up * randomY);
+        if (myCam != null) myCam.transform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+    }
+    
+    [ServerRpc]
+    void SpawnBulletTrailServerRpc(Vector3 endPoint)
+    {
+        SpawnBulletTrailClientRpc(endPoint);
+    }
+
+    [ClientRpc]
+    void SpawnBulletTrailClientRpc(Vector3 endPoint)
+    {
+        if (bulletTrailPrefab == null) return;
+        
+        Vector3 startPoint = transform.position + Vector3.up * 1.5f; 
+        
+        if (IsOwner)
+        {
+            // 1. 빈 오브젝트(Transform)가 할당되어 있으면 그 위치를 사용 (가장 우선)
+            if (muzzlePoint != null)
+            {
+                startPoint = muzzlePoint.position;
+            }
+            // 2. 없으면 카메라 기준으로 내가 설정한 오프셋 사용
+            else if (myCam != null)
+            {
+                startPoint = myCam.transform.TransformPoint(muzzleOffset);
+            }
+        }
+        else if (weaponController != null)
+        {
+            // 3. 다른 사람 화면(3인칭)에서는 무기 모델 총구 위치 사용
+            startPoint = weaponController.GetMuzzlePosition();
+        }
+            
+        GameObject trail = Instantiate(bulletTrailPrefab, startPoint, Quaternion.identity);
+        LineRenderer line = trail.GetComponent<LineRenderer>();
+        if (line != null)
+        {
+            // ★ 중요: 월드 좌표계 사용 강제 설정
+            line.useWorldSpace = true;
+            line.positionCount = 2; // 점 2개
+            
+            line.SetPosition(0, startPoint);
+            line.SetPosition(1, endPoint);
+        }
+    }
+
+    [ServerRpc]
+    void SpawnBulletHoleServerRpc(Vector3 pos, Vector3 normal)
+    {
+        SpawnBulletHoleClientRpc(pos, normal);
+    }
+
+    [ClientRpc]
+    void SpawnBulletHoleClientRpc(Vector3 pos, Vector3 normal)
+    {
+        if (bulletHolePrefab != null)
+        {
+            // Z-Fighting 방지 (면에서 아주 살짝 띄움 - 너무 멀면 붕 떠보임)
+            Vector3 spawnPos = pos + normal * 0.02f;
+            Quaternion rot = Quaternion.LookRotation(normal);
+            
+            // Quad가 반대 방향을 보고 있다면 180도 회전 (프리팹에 따라 다를 수 있음)
+            rot *= Quaternion.Euler(0, 180f, 0);
+            
+            Instantiate(bulletHolePrefab, spawnPos, rot);
         }
     }
 
@@ -396,6 +604,9 @@ public class PlayerController : NetworkBehaviour
         if (UIManager.Instance != null) UIManager.Instance.UpdateHP(100, team);
         SetPlayerState(true);
     }
+
+
+
 
     void MoveToSpawnPoints(int team, int spawnIndex = -1)
     {

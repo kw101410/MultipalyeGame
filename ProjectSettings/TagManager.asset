@@ -9,6 +9,7 @@ TagManager:
   - BulletSpawn
   - LevelPart
   - Dummie
+  - ScopeUI
   layers:
   - Default
   - TransparentFX

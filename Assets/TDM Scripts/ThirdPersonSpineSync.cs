@@ -37,9 +37,14 @@ public class ThirdPersonSpineSync : NetworkBehaviour
     private PlayerController playerController;
     private Animator currentAnimator;
     
+    // 최적화: spineBones.Length 캐싱
+    private int spineBoneCount = 0;
+    
     void Awake()
     {
         playerController = GetComponent<PlayerController>();
+        // 최적화: enableSync가 false이면 컴포넌트 자체를 비활성화 (Update/LateUpdate 호출 자체를 차단)
+        if (!enableSync) enabled = false;
     }
     
     public override void OnNetworkSpawn()
@@ -72,6 +77,7 @@ public class ThirdPersonSpineSync : NetworkBehaviour
         if (upperChest != null) bones.Add(upperChest);
         
         spineBones = bones.ToArray();
+        spineBoneCount = spineBones.Length;
     }
     
     GameObject GetActiveModel()
@@ -88,7 +94,8 @@ public class ThirdPersonSpineSync : NetworkBehaviour
     
     void Update()
     {
-        if (!enableSync || !IsSpawned) return;
+        // 최적화: enableSync가 false이면 Awake에서 enabled=false로 설정했으므로 여기까지 오지 않음
+        if (!IsSpawned) return;
         
         if (IsOwner)
         {
@@ -98,7 +105,7 @@ public class ThirdPersonSpineSync : NetworkBehaviour
     
     void LateUpdate()
     {
-        if (!enableSync || !IsSpawned) return;
+        if (!IsSpawned) return;
         
         ApplySpineRotation();
     }
@@ -119,12 +126,12 @@ public class ThirdPersonSpineSync : NetworkBehaviour
     
     void ApplySpineRotation()
     {
-        if (spineBones == null || spineBones.Length == 0) return;
+        if (spineBoneCount == 0) return;
         
         currentPitch = Mathf.Lerp(currentPitch, syncedPitch.Value, smoothSpeed * Time.deltaTime);
-        float rotationPerBone = currentPitch * totalWeight / spineBones.Length;
+        float rotationPerBone = currentPitch * totalWeight / spineBoneCount;
         
-        for (int i = 0; i < spineBones.Length; i++)
+        for (int i = 0; i < spineBoneCount; i++)
         {
             if (spineBones[i] == null) continue;
             spineBones[i].localRotation = spineBones[i].localRotation * 

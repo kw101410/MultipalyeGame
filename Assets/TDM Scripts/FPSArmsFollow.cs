@@ -39,8 +39,19 @@ public class FPSArmsFollow : MonoBehaviour
         float armsXRotation = cameraXRotation * rotationFollowAmount;
         targetRotation = Quaternion.Euler(armsXRotation, cameraTransform.eulerAngles.y, 0);
         
-        // 부드럽게 이동
-        transform.position = Vector3.Lerp(transform.position, targetPosition, smoothSpeed * Time.deltaTime);
-        transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, smoothSpeed * Time.deltaTime);
+        // 최적화: deltaTime 계산 캐싱
+        float t = smoothSpeed * Time.deltaTime;
+        
+        // 최적화: 이미 충분히 가까우면 스냅 (불필요한 보간 제거)
+        if ((targetPosition - transform.position).sqrMagnitude < 0.0001f)
+        {
+            transform.position = targetPosition;
+            transform.rotation = targetRotation;
+        }
+        else
+        {
+            transform.position = Vector3.Lerp(transform.position, targetPosition, t);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, t);
+        }
     }
 }

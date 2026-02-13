@@ -1,15 +1,20 @@
 using UnityEngine;
-using TMPro; // TMP ÇÊ¼ö
-using System.Collections; // ÄÚ·çÆ¾¿ë
+using TMPro; // TMP í•„ìˆ˜
+using System.Collections; // ì½”ë£¨í‹´ìš©
 
 public class UIManager : MonoBehaviour
 {
     public static UIManager Instance;
 
-    [Header("UI ¿ÀºêÁ§Æ® ¿¬°á (Inspector È®ÀÎ)")]
+    [Header("UI ì˜¤ë¸Œì íŠ¸ ì—°ê²° (Inspector í™•ì¸)")]
     public TextMeshProUGUI hpText;
     public TextMeshProUGUI scoreText;
-    public TextMeshProUGUI winLoseText; // ½Â¸® ¸Ş½ÃÁö¿ë (¾øÀ¸¸é ºñ¿öµÖµµ µÊ)
+    public TextMeshProUGUI winLoseText; // ìŠ¹ë¦¬ ë©”ì‹œì§€
+
+    [Header("Round Result Panels")]
+    public GameObject winPanel;  // ìŠ¹ë¦¬ ì´ë¯¸ì§€ íŒ¨ë„
+    public GameObject losePanel; // íŒ¨ë°° ì´ë¯¸ì§€ íŒ¨ë„
+    public TextMeshProUGUI centerMessageText; // ì¤‘ì•™ ë©”ì‹œì§€ (Ready, Fight ë“±)
 
     private void Awake()
     {
@@ -19,98 +24,158 @@ public class UIManager : MonoBehaviour
 
     private void Start()
     {
-        // ¶ó¿îµå ¸Å´ÏÀú Ã£¾Æ¼­ Á¡¼öÆÇ ¿¬°á
+        // ë¼ìš´ë“œ ë§¤ë‹ˆì € ì°¾ì•„ì„œ ì ìˆ˜íŒ ì—°ê²°
         StartCoroutine(ConnectToGameManager());
     }
 
-    // HP °»½Å (ÆÀ ÄÃ·¯ Àû¿ë)
-    // PlayerController¿¡¼­ È£ÃâÇÒ ¶§ teamIdµµ °°ÀÌ ³Ñ°ÜÁà¾ß ÇÔ
+    // HP ê°±ì‹  (íŒ€ ì»¬ëŸ¬ ì ìš©)
+    // PlayerControllerì—ì„œ í˜¸ì¶œí•  ë•Œ teamIdë„ ê°™ì´ ë„˜ê²¨ì¤˜ì•¼ í•¨
     public void UpdateHP(int hp, int teamId = -1)
     {
         if (hpText == null) return;
 
         hpText.text = $"HP: {hp}";
 
-        // 1. µşÇÇ(30 ÀÌÇÏ)¸é ¹«Á¶°Ç »¡°­
+        // 1. ë”¸í”¼(30 ì´í•˜)ë©´ ë¬´ì¡°ê±´ ë¹¨ê°•
         if (hp <= 30)
         {
             hpText.color = Color.red;
         }
-        // 2. ¾Æ´Ï¸é ÆÀ »ö±ò (0:White/Red, 1:Cyan/Blue) - ´Ï ÃëÇâ²¯
+        // 2. ì•„ë‹ˆë©´ íŒ€ ìƒ‰ê¹” (0:White/Red, 1:Cyan/Blue) - ë‹ˆ ì·¨í–¥ê»
         else
         {
-            if (teamId == 0) hpText.color = Color.white;      // ·¹µåÆÀ ±âº»»ö
-            else if (teamId == 1) hpText.color = Color.cyan;  // ºí·çÆÀ ±âº»»ö
-            else hpText.color = Color.white; // ¸ô·ç?
+            if (teamId == 0) hpText.color = Color.white;      // ë ˆë“œíŒ€ ê¸°ë³¸ìƒ‰
+            else if (teamId == 1) hpText.color = Color.cyan;  // ë¸”ë£¨íŒ€ ê¸°ë³¸ìƒ‰
+            else hpText.color = Color.white; // ëª°ë£¨?
         }
     }
 
     // ---------------------------------------------------------
-    // ¾Æ·¡´Â Á¡¼öÆÇ ÀÚµ¿ °»½Å ·ÎÁ÷ (¾Æ±î ±×°Å)
+    // ì•„ë˜ëŠ” ì ìˆ˜íŒ ìë™ ê°±ì‹  ë¡œì§ (ì•„ê¹Œ ê·¸ê±°)
     // ---------------------------------------------------------
 
     private IEnumerator ConnectToGameManager()
     {
-        // ¸Å´ÏÀú ¶ã ¶§±îÁö ´ë±â
         while (RoundGameManager.Instance == null)
         {
             yield return null;
         }
-
-        // Á¡¼ö º¯°æ ÀÌº¥Æ® ±¸µ¶
-        RoundGameManager.Instance.RedRoundScore.OnValueChanged += (oldVal, newVal) => UpdateScoreFromManager();
-        RoundGameManager.Instance.BlueRoundScore.OnValueChanged += (oldVal, newVal) => UpdateScoreFromManager();
-
-        // ÃÊ±â Á¡¼ö °»½Å
-        UpdateScoreFromManager();
+        
+        // ì´ˆê¸° ì ìˆ˜ í•œ ë²ˆ ê°±ì‹ 
+        UpdateRoundScore(RoundGameManager.Instance.RedRoundScore.Value, RoundGameManager.Instance.BlueRoundScore.Value);
     }
 
-    private void UpdateScoreFromManager()
+    // ì ìˆ˜ ì—…ë°ì´íŠ¸ (RoundGameManagerì—ì„œ í˜¸ì¶œ)
+    public void UpdateRoundScore(int red, int blue)
     {
-        if (RoundGameManager.Instance == null || scoreText == null) return;
-
-        int red = RoundGameManager.Instance.RedRoundScore.Value;
-        int blue = RoundGameManager.Instance.BlueRoundScore.Value;
-
-        // TMP´Â <color> ÅÂ±× Àß ¸ÔÀ½. °³²Ü.
-        scoreText.text = $"<color=red>RED {red}</color>  :  <color=blue>{blue} BLUE</color>";
-    }
-
-    // ¶ó¿îµå °á°ú ¸Ş½ÃÁö (RoundGameManager°¡ ºÎ¸§)
-    public void ShowRoundResult(string winnerTeamName)
-    {
-        if (winLoseText != null)
+        if (scoreText != null)
         {
-            winLoseText.gameObject.SetActive(true);
-            winLoseText.text = $"{winnerTeamName} TEAM WIN!";
-            StartCoroutine(HideResultText());
+            scoreText.text = $"<color=red>RED {red}</color>  :  <color=blue>{blue} BLUE</color>";
         }
     }
 
-    private IEnumerator HideResultText()
+    // ì¤‘ì•™ ë©”ì‹œì§€ í‘œì‹œ (Ready..., FIGHT!)
+    public void ShowMessage(string msg, float duration)
     {
+        if (centerMessageText != null)
+        {
+            centerMessageText.text = msg;
+            centerMessageText.gameObject.SetActive(true);
+            StartCoroutine(HideMessageRoutine(duration));
+        }
+    }
+
+    private IEnumerator HideMessageRoutine(float duration)
+    {
+        yield return new WaitForSeconds(duration);
+        if (centerMessageText != null) centerMessageText.gameObject.SetActive(false);
+    }
+
+    // ë¼ìš´ë“œ ê²°ê³¼ (ìŠ¹/íŒ¨ ì´ë¯¸ì§€ ë„ìš°ê¸° - ì•ˆì „í•˜ê²Œ ì½”ë£¨í‹´ ì‚¬ìš©)
+    public void ShowRoundResult(int winnerTeamId)
+    {
+        StartCoroutine(ShowRoundResultRoutine(winnerTeamId));
+    }
+
+    private IEnumerator ShowRoundResultRoutine(int winnerTeamId)
+    {
+        // 1. ë‚´ í”Œë ˆì´ì–´(IsOwner) ì°¾ê¸° (ìµœëŒ€ 4ì´ˆ ëŒ€ê¸° - ë„¤íŠ¸ì›Œí¬ ì§€ì—° ë° ìŠ¤í° ë”œë ˆì´ ëŒ€ë¹„)
+        PlayerController localPC = null;
+        float timeout = 4f;
+        while (timeout > 0)
+        {
+            // ë°©ë²• A: SpawnManagerë¥¼ í†µí•´ ì°¾ê¸° (ê°€ì¥ ê¶Œì¥ë¨)
+            if (Unity.Netcode.NetworkManager.Singleton.SpawnManager != null) 
+            {
+                var localObj = Unity.Netcode.NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
+                if (localObj != null)
+                {
+                    localPC = localObj.GetComponent<PlayerController>();
+                }
+            }
+            
+            // ë°©ë²• B: LocalClient í™•ì¸
+            if (localPC == null && Unity.Netcode.NetworkManager.Singleton.LocalClient?.PlayerObject != null)
+            {
+                localPC = Unity.Netcode.NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
+            }
+            
+            // ë°©ë²• C: ì”¬ì— ìˆëŠ” ëª¨ë“  PlayerController ë’¤ì ¸ì„œ IsOwner ì°¾ê¸° (ìµœí›„ì˜ ìˆ˜ë‹¨)
+            if (localPC == null)
+            {
+                foreach (var pc in FindObjectsByType<PlayerController>(FindObjectsSortMode.None))
+                {
+                    if (pc.IsOwner) 
+                    {
+                        localPC = pc;
+                        break; // ì°¾ì•˜ìœ¼ë©´ íƒˆì¶œ
+                    }
+                }
+            }
+            
+            // ì°¾ì•˜ìœ¼ë©´ ë£¨í”„ íƒˆì¶œ
+            if (localPC != null) break;
+            
+            yield return null;
+            timeout -= Time.deltaTime;
+        }
+
+        // 2. ë‚´ íŒ€ í™•ì¸ ë° ê²°ê³¼ í‘œì‹œ
+        int myTeam = -1;
+        if (localPC != null) 
+        {
+            myTeam = localPC.teamId.Value;
+        }
+        else
+        {
+             Debug.LogError("[UIManager] ShowRoundResult: Failed to find Local Player!");
+        }
+
+        // 3. ìŠ¹/íŒ¨ íŒ¨ë„ í™œì„±í™”
+        if (myTeam != -1)
+        {
+            bool isWin = (myTeam == winnerTeamId);
+            if (isWin && winPanel != null) winPanel.SetActive(true);
+            else if (!isWin && losePanel != null) losePanel.SetActive(true);
+        }
+
+        // 4. 3ì´ˆ ë³´ì—¬ì£¼ê³  ë„ê¸°
         yield return new WaitForSeconds(3f);
+        
+        if (winPanel != null) winPanel.SetActive(false);
+        if (losePanel != null) losePanel.SetActive(false);
+        
+        // í…ìŠ¤íŠ¸ëŠ” ì´ì œ ì•ˆ ì”€
         if (winLoseText != null) winLoseText.gameObject.SetActive(false);
     }
 
-    private void OnDestroy()
-    {
-        // ±¸µ¶ Ãë¼Ò (ÇÊ¼ö)
-        if (RoundGameManager.Instance != null)
-        {
-            RoundGameManager.Instance.RedRoundScore.OnValueChanged -= (old, @new) => UpdateScoreFromManager();
-            RoundGameManager.Instance.BlueRoundScore.OnValueChanged -= (old, @new) => UpdateScoreFromManager();
-        }
-    }
+    // ìµœì¢… ê²°ê³¼ (ê¸°ì¡´ ìœ ì§€ - ë¬¸ìì—´)
     public void ShowFinalResult(string winnerTeamName)
     {
         if (winLoseText != null)
         {
             winLoseText.gameObject.SetActive(true);
-            // ÅØ½ºÆ® Å©±â Á» Å°¿ì°Å³ª »ö±ò ¹Ù²Ù¸é ÁÁÀ½ (¿©±â¼± ÅØ½ºÆ®¸¸ º¯°æ)
             winLoseText.text = $"<size=150%>{winnerTeamName} TEAM\nFINAL VICTORY!</size>";
-
-            // ÀÌ°Ç ÀÚµ¿À¸·Î ¾È ²¨Áü (¾À ÀÌµ¿ÇÒ ¶§±îÁö À¯Áö)
         }
     }
 }
