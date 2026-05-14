@@ -31,9 +31,9 @@ public class PlayerController : NetworkBehaviour
     private float xRotation = 0f;
 
     [Header("Combat Settings")]
-    public NetworkVariable<int> hp = new NetworkVariable<int>(100);
+    public NetworkVariable<int> hp = new NetworkVariable<int>(100, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     // 초기값 -1: 의미 없음. 서버값 덮어씌워질 예정.
-    public NetworkVariable<int> teamId = new NetworkVariable<int>(-1);
+    public NetworkVariable<int> teamId = new NetworkVariable<int>(-1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     public Camera myCam;
 
     private bool isGrounded;
@@ -106,6 +106,12 @@ public class PlayerController : NetworkBehaviour
     {
         base.OnNetworkSpawn();
 
+        // 0. 로비 씬이면 모델 숨기기 (꼼수)
+        CheckSceneState();
+        
+        // 씬 변경 이벤트 구독 (로비 -> 게임 이동 시 자동 활성화)
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+
         // 1. [서버] 접속자 팀 배정 (접속 순서대로 0, 1)
         if (IsServer)
         {
@@ -116,24 +122,29 @@ public class PlayerController : NetworkBehaviour
         teamId.OnValueChanged += OnTeamChanged;
 
         // ★ 핵심: 이미 값이 들어와 있는 상태면 이벤트가 안 터짐. 수동 호출.
-        ApplyTeamModel(teamId.Value);
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != "LobbyScene")
+        {
+            ApplyTeamModel(teamId.Value);
+        }
 
         // 3. [내 캐릭터] 초기 설정
         if (IsOwner)
         {
             // 마우스 가두기
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            // 로비면 안 가둠, 게임이면 가둠
+            if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name != "LobbyScene")
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                if (teamId.Value != -1) MoveToSpawnPoints(teamId.Value);
+                
+                // UI 초기화
+                if (UIManager.Instance != null)
+                    UIManager.Instance.UpdateHP(hp.Value, teamId.Value);
 
-            // 스폰 위치로 이동 (팀 배정이 유효한 경우만)
-            if (teamId.Value != -1) MoveToSpawnPoints(teamId.Value);
-
-            // UI 초기화
-            if (UIManager.Instance != null)
-                UIManager.Instance.UpdateHP(hp.Value, teamId.Value);
-
-            // HP  
-            hp.OnValueChanged += OnHpChanged;
+                // HP  
+                hp.OnValueChanged += OnHpChanged;
+            }
         }
         else
         {
@@ -146,10 +157,59 @@ public class PlayerController : NetworkBehaviour
         }
     }
 
+    public override void OnNetworkDespawn()
+    {
+        base.OnNetworkDespawn();
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
+    {
+        CheckSceneState();
+    }
+
+    void CheckSceneState()
+    {
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "LobbyScene")
+        {
+            SetPlayerState(false); // 모델 끄고 컨트롤러 끄기
+            if (IsOwner)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                if (myCam != null) myCam.enabled = false;
+                if (listener != null) listener.enabled = false;
+            }
+            this.enabled = false; 
+        }
+        else // GameScene or others
+        {
+            // 게임 씬이면 활성화
+            SetPlayerState(true);
+            if (IsOwner)
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                if (teamId.Value != -1) MoveToSpawnPoints(teamId.Value);
+            }
+        }
+    }
+
     private void OnHpChanged(int oldVal, int newVal)
     {
-        if (IsOwner && UIManager.Instance != null)
-            UIManager.Instance.UpdateHP(newVal, teamId.Value);
+        Debug.Log($"[PlayerController] OnHpChanged: {oldVal} -> {newVal}, IsOwner: {IsOwner}, Team: {teamId.Value}");
+
+        if (IsOwner)
+        {
+            if (UIManager.Instance != null)
+            {
+                UIManager.Instance.UpdateHP(newVal, teamId.Value);
+            }
+            else
+            {
+                Debug.LogError("[PlayerController] UIManager.Instance is NULL!");
+            }
+        }
 
         // Ragdoll Logic Restored
         if (ragdoll != null)
@@ -170,8 +230,15 @@ public class PlayerController : NetworkBehaviour
 
     private void OnTeamChanged(int oldVal, int newVal)
     {
+        Debug.Log($"[PlayerController] OnTeamChanged: {oldVal} -> {newVal} (IsOwner: {IsOwner})");
+        
         ApplyTeamModel(newVal);
-        if (IsOwner) MoveToSpawnPoints(newVal);
+        if (IsOwner) 
+        {
+            MoveToSpawnPoints(newVal);
+            // Team ID가 바뀌었을 때도 HP UI 갱신 (색깔 등 반영 필요)
+            if (UIManager.Instance != null) UIManager.Instance.UpdateHP(hp.Value, newVal);
+        }
     }
 
     private void ApplyTeamModel(int team)
@@ -242,9 +309,37 @@ public class PlayerController : NetworkBehaviour
     
     // ...
 
+    private int lastHp = -1; // UI 강제 동기화용 변수
+
     void Update()
     {
+        // ★ 안전장치: 로비 씬인데 만약 활성화되어 있다면 강제로 끄기
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "LobbyScene")
+        {
+            if (redModel != null && redModel.activeSelf) redModel.SetActive(false);
+            if (blueModel != null && blueModel.activeSelf) blueModel.SetActive(false);
+            if (myCam != null && myCam.enabled) myCam.enabled = false;
+            if (listener != null && listener.enabled) listener.enabled = false;
+            if (IsOwner) 
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+            return;
+        }
+
         if (!IsSpawned || !IsOwner) return;
+
+        // ★ 강제 UI 동기화 (이벤트가 씹힐 경우 대비)
+        if (hp.Value != lastHp)
+        {
+            lastHp = hp.Value;
+            if (UIManager.Instance != null)
+            {
+                UIManager.Instance.UpdateHP(lastHp, teamId.Value);
+                // Debug.Log($"[PlayerController] Forced UI Update (Update Loop): {lastHp}");
+            }
+        }
 
         // 게임 화면 클릭하면 마우스 다시 잡기 (에디터 문제 해결)
         // 최적화: 이미 잠겨있으면 스킵
@@ -402,22 +497,13 @@ public class PlayerController : NetworkBehaviour
         // 칼 공격일 때 처리 (궤적 없음)
         if (weaponController != null && weaponController.GetCurrentSlot() == WeaponSlot.Melee)
         {
-            // 3인칭 공격 애니메이션 (상체만 재생하여 하체 움직임 유지)
+            // (생략: 기존 코드 유지, 너무 길어서 중략하지만 실제로는 유지됨)
             if (anim != null)
             {
                 int ubIdx = anim.GetLayerIndex("Upper Body");
-                if (ubIdx >= 0)
-                {
-                    // 상체 레이어에서만 Knife Attack 재생 (하체 방해 X)
-                    // (이동 중 공격 가능)
-                    anim.CrossFade("Knife Attack", 0.1f, ubIdx);
-                }
-                else
-                {
-                    anim.SetTrigger(ANIM_ATTACK); // 백업
-                }
+                if (ubIdx >= 0) anim.CrossFade("Knife Attack", 0.1f, ubIdx);
+                else anim.SetTrigger(ANIM_ATTACK);
             }
-            // FPS Arms + 전신 공격 모션
             weaponController.TriggerMeleeAttack();
             return; 
         }
@@ -439,25 +525,33 @@ public class PlayerController : NetworkBehaviour
             if (targetScript != null)
             {
                 // 자기 자신을 맞춘 경우 무시
-                if (targetScript.NetworkObjectId == NetworkObjectId) return;
-                
-                // 같은 팀이면 무시
-                if (targetScript.teamId.Value == teamId.Value) return;
-                
-                SubmitHitServerRpc(targetScript.NetworkObjectId, damage);
+                if (targetScript.NetworkObjectId == NetworkObjectId) 
+                {
+                    // return; // 자기 자신 맞춰도 반동은 있어야 함. 하지만 데미지는 주면 안됨.
+                }
+                else
+                {
+                    // 같은 팀이면 무시 (팀 아이디 확인 디버그)
+                    Debug.Log($"MyTeam: {teamId.Value}, TargetTeam: {targetScript.teamId.Value}");
+
+                    if (targetScript.teamId.Value != teamId.Value) 
+                    {
+                         SubmitHitServerRpc(targetScript.NetworkObjectId, damage);
+                    }
+                }
             }
             else
             {
                 // 플레이어가 아니면 벽/바닥으로 간주 -> 총알 자국 생성 (서버 중계)
-                Debug.Log($"[Shoot] 벽/바닥 적중: {hit.collider.name}"); // 디버그 로그 추가
+                // Debug.Log($"[Shoot] 벽/바닥 적중: {hit.collider.name}");
                 SpawnBulletHoleServerRpc(hit.point, hit.normal);
             }
         }
         
-        // 총알 궤적 생성 (서버 중계)
+        // ★ 총알 궤적 생성 (서버 중계) - 적중 여부와 상관없이 실행
         SpawnBulletTrailServerRpc(endPoint);
 
-        // ★ 반동 적용 (총알 발사 후 마지막에 적용해야 정확도가 유지됨)
+        // ★ 반동 적용 (총알 발사 후 마지막에 적용해야 정확도가 유지됨) - 적중 여부와 상관없이 실행
         if (weaponController != null)
         {
             float rx, ry;
@@ -626,15 +720,20 @@ public class PlayerController : NetworkBehaviour
     {
         if (isActive)
         {
-            if (ragdoll != null) ragdoll.DisableRagdoll();
             ApplyTeamModel(teamId.Value);
+            if (ragdoll != null) ragdoll.DisableRagdoll();
+            if (controller != null) controller.enabled = true;
+            if (myCam != null && IsOwner) myCam.enabled = true;
+            if (listener != null && IsOwner) listener.enabled = true;
+            this.enabled = true; // Update 루프 활성화
         }
         else
         {
             if (redModel) redModel.SetActive(false);
             if (blueModel) blueModel.SetActive(false);
+            if (controller != null) controller.enabled = false;
+            // 카메라와 리스너는 호출부에서 컨텍스트에 맞게 제어
+            // this.enabled = false; // 호출부에서 제어
         }
-        if (controller != null) controller.enabled = isActive;
-        if (IsOwner) this.enabled = isActive;
     }
 }

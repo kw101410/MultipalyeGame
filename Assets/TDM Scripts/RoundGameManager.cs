@@ -88,8 +88,15 @@ public class RoundGameManager : NetworkBehaviour
     
     private IEnumerator RoundStartCountdown()
     {
-        // 5초 대기 (준비 시간)
-        yield return new WaitForSeconds(5f);
+        // 5초 카운트다운 (5, 4, 3, 2, 1)
+        for (int i = 5; i > 0; i--)
+        {
+            UpdateCountdownClientRpc(i);
+            yield return new WaitForSeconds(1f);
+        }
+
+        // 카운트다운 이미지를 숨기기 위해 0 전송
+        UpdateCountdownClientRpc(0);
         
         // 3. 플레이어 해제 (입력 허용)
         FreezeAllPlayersClientRpc(false);
@@ -98,6 +105,15 @@ public class RoundGameManager : NetworkBehaviour
         isRoundPlaying = true; 
     }
     
+    [ClientRpc]
+    private void UpdateCountdownClientRpc(int count)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateCountdown(count);
+        }
+    }
+
     [ClientRpc]
     private void FreezeAllPlayersClientRpc(bool freeze)
     {
@@ -114,8 +130,8 @@ public class RoundGameManager : NetworkBehaviour
         // UI 메시지 ("Ready..." vs "Fight!")
         if (UIManager.Instance != null)
         {
-            if (freeze) UIManager.Instance.ShowMessage("Ready...", 5f); // 5초간 레디 메시지
-            else UIManager.Instance.ShowMessage("FIGHT!", 2f); // 시작 메시지
+            // if (freeze) UIManager.Instance.ShowMessage("Ready...", 5f); // "Ready..."는 카운트다운 이미지로 대체
+            if (!freeze) UIManager.Instance.ShowMessage("FIGHT!", 2f); // 시작 메시지
         }
     }
 

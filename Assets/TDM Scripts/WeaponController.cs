@@ -117,6 +117,8 @@ public class WeaponController : NetworkBehaviour
     // 줌 관련 변수
     private float defaultFOV;
     private float defaultSensitivity;
+    private float initialSensitivity; // 시작 시 감도 (기준점 0을 위함)
+    private float sensDisplayTimer = 0f; // 감도 텍스트 표시 시간
     private float defaultSpeed; // 기본 이동 속도
     private bool isZoomed = false;
     private Vector3 defaultArmsPos; // FPS 팔 기본 위치
@@ -131,6 +133,7 @@ public class WeaponController : NetworkBehaviour
         if (playerController != null) 
         {
             defaultSensitivity = playerController.mouseSensitivity;
+            initialSensitivity = defaultSensitivity; // 기준점 저장
             defaultSpeed = playerController.speed;
         }
         
@@ -143,7 +146,7 @@ public class WeaponController : NetworkBehaviour
         // 스코프 Auto Find (드래그 앤 드롭 불편 해결)
         if (scopeOverlay == null)
         {
-            // 태그로 찾기 (가장 확실함)
+            // 1. Tag로 찾기 (활성화된 경우)
             GameObject found = GameObject.FindGameObjectWithTag("ScopeUI");
             if (found != null)
             {
@@ -152,17 +155,30 @@ public class WeaponController : NetworkBehaviour
             }
             else
             {
-                // 태그 없으면 이름으로 백업 검색
-                var canvas = FindFirstObjectByType<Canvas>();
-                if (canvas != null)
+                // 2. 비활성화된 경우 Canvas 전체 검색 (Canvas 컴포넌트 찾아서 자식들 뒤짐)
+                var canvases = FindObjectsByType<Canvas>(FindObjectsSortMode.None);
+                foreach (var canvas in canvases)
                 {
-                    Transform t = canvas.transform.Find("ScopeOverlay");
-                    if (t != null) 
+                    // Canvas 자식 중 "ScopeUI" 태그를 가진 놈 찾기 (비활성화 포함)
+                    foreach (Transform child in canvas.transform)
                     {
-                        scopeOverlay = t.gameObject;
-                        scopeOverlay.SetActive(false);
+                        if (child.CompareTag("ScopeUI")) 
+                        {
+                            scopeOverlay = child.gameObject;
+                            break;
+                        }
+                        // 이름으로 백업 검색
+                        if (child.name == "ScopeOverlay" || child.name.Contains("Scope"))
+                        {
+                             scopeOverlay = child.gameObject;
+                             break;
+                        }
                     }
+                    if (scopeOverlay != null) break;
                 }
+                
+                // 찾았으면 끄기
+                if (scopeOverlay != null) scopeOverlay.SetActive(false);
             }
         }
 
@@ -184,14 +200,8 @@ public class WeaponController : NetworkBehaviour
         
         currentSlot.OnValueChanged += OnSlotChanged;
         selectedPrimaryType.OnValueChanged += OnPrimaryTypeChanged;
-        // Start에서 EquipSlot 호출하지 않음 - OnNetworkSpawn에서 처리
-        currentSlot.OnValueChanged += OnSlotChanged;
-        selectedPrimaryType.OnValueChanged += OnPrimaryTypeChanged;
-        // Start에서 EquipSlot 호출하지 않음 - OnNetworkSpawn에서 처리
     }
     
-
-
     public void TryReload()
     {
         WeaponData weapon = GetCurrentWeapon();
@@ -231,6 +241,23 @@ public class WeaponController : NetworkBehaviour
     void OnGUI()
     {
         if (!IsOwner) return;
+
+        // 감도 표시 (변화 시 잠시 나타남)
+        if (sensDisplayTimer > 0f)
+        {
+            float diff = (defaultSensitivity - initialSensitivity) / 10f; // 실제 값 10당 표시값 1
+            string sign = diff >= 0 ? "+" : "";
+            string sensText = $"Sensitivity: {sign}{diff}"; // 예: +1, -2, +0
+            
+            GUIStyle sStyle = new GUIStyle();
+            sStyle.fontSize = 30;
+            sStyle.fontStyle = FontStyle.Bold;
+            sStyle.normal.textColor = Color.yellow; // 눈에 띄게 노란색
+            sStyle.alignment = TextAnchor.MiddleRight;
+            
+            // 화면 우측 중간 표시
+            GUI.Label(new Rect(Screen.width - 320, Screen.height / 2 - 25, 300, 50), sensText, sStyle);
+        }
         
         WeaponData weapon = GetCurrentWeapon();
         if (weapon != null && weapon.type != WeaponType.Knife)
@@ -373,6 +400,33 @@ public class WeaponController : NetworkBehaviour
             }
         }
 
+        // 감도 조절 ([ 감소, ] 증가)
+        if (Input.GetKeyDown(KeyCode.LeftBracket))
+        {
+            defaultSensitivity = Mathf.Max(10f, defaultSensitivity - 10f);
+            if (playerController != null)
+            {
+                playerController.mouseSensitivity = isZoomed ? defaultSensitivity * 0.3f : defaultSensitivity;
+            }
+            sensDisplayTimer = 2.0f; // 텍스트 표시
+            Debug.Log($"Mouse Sensitivity Decreased: {defaultSensitivity}");
+        }
+        if (Input.GetKeyDown(KeyCode.RightBracket))
+        {
+            defaultSensitivity += 10f;
+            if (playerController != null)
+            {
+                playerController.mouseSensitivity = isZoomed ? defaultSensitivity * 0.3f : defaultSensitivity;
+            }
+            sensDisplayTimer = 2.0f; // 텍스트 표시
+             Debug.Log($"Mouse Sensitivity Increased: {defaultSensitivity}");
+        }
+        
+        if (sensDisplayTimer > 0)
+        {
+            sensDisplayTimer -= Time.deltaTime;
+        }
+
         // R키로 재장전
         if (Input.GetKeyDown(KeyCode.R))
         {
@@ -481,7 +535,9 @@ public class WeaponController : NetworkBehaviour
         }
 
         // FOV 애니메이션 (부드럽게)
-        float targetFOV = isZoomed ? currentWeapon.zoomFOV : defaultFOV;
+        // currentWeapon이 null일 경우(없을 때)에도 에러 방지
+        float targetZoomFOV = (currentWeapon != null) ? currentWeapon.zoomFOV : defaultFOV;
+        float targetFOV = isZoomed ? targetZoomFOV : defaultFOV;
         playerCam.fieldOfView = Mathf.Lerp(playerCam.fieldOfView, targetFOV, Time.deltaTime * 15f);
     }
 
@@ -786,7 +842,6 @@ public class WeaponController : NetworkBehaviour
              return currentWeaponModel.transform.position + currentWeaponModel.transform.forward * 0.8f;
         }
         
-        // 무기가 없으면 대충 가슴 높이
-        return transform.position + Vector3.up * 1.4f + transform.forward * 0.5f;
+        return transform.position + Vector3.up * 1.5f + transform.forward;
     }
 }
